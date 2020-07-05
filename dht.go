@@ -68,8 +68,8 @@ const (
 )
 
 const (
-	kbucketTag       = "kbucket"
-	protectedBuckets = 2
+	kbucketTag              = "kbucket"
+	defaultProtectedBuckets = 1
 )
 
 // IpfsDHT is an implementation of Kademlia with S/Kademlia modifications.
@@ -367,7 +367,8 @@ func makeRoutingTable(dht *IpfsDHT, cfg config, maxLastSuccessfulOutboundThresho
 
 	rt.PeerAdded = func(p peer.ID) {
 		commonPrefixLen := kb.CommonPrefixLen(dht.selfKey, kb.ConvertPeerID(p))
-		if commonPrefixLen < protectedBuckets {
+		// #BDWare
+		if commonPrefixLen <= cfg.protectedBuckets || cfg.protectAllBuckets {
 			cmgr.Protect(p, kbucketTag)
 		} else {
 			cmgr.TagPeer(p, kbucketTag, baseConnMgrScore)

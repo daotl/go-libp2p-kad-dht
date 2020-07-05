@@ -55,14 +55,17 @@ type config struct {
 	enableValues     bool
 	providersOptions []providers.Option
 	queryPeerFilter  QueryFilterFunc
+	// #BDWare
+	protectAllBuckets bool
+	protectedBuckets  int
 
 	routingTable struct {
 		refreshQueryTimeout time.Duration
 		refreshInterval     time.Duration
 		autoRefresh         bool
 		latencyTolerance    time.Duration
-		checkInterval       time.Duration
-		peerFilter          RouteTableFilterFunc
+		//checkInterval       time.Duration // Commented out by Nex, doesn't seem to be used.
+		peerFilter RouteTableFilterFunc
 		// #BDWare
 		considerLatency        bool
 		avgBitsImprovedPerStep float64
@@ -142,6 +145,10 @@ var defaults = func(o *config) error {
 	o.bucketSize = defaultBucketSize
 	o.concurrency = 10
 	o.resiliency = 3
+
+	// #BDWare
+	o.protectAllBuckets = false
+	o.protectedBuckets = defaultProtectedBuckets
 
 	o.v1CompatibleMode = true
 
@@ -398,6 +405,31 @@ func QueryFilter(filter QueryFilterFunc) Option {
 func RoutingTableFilter(filter RouteTableFilterFunc) Option {
 	return func(c *config) error {
 		c.routingTable.peerFilter = filter
+		return nil
+	}
+}
+
+// #BDWare
+// EnableProtectAllBuckets enable protecting peers in all buckets in the routing table with ConnManager.
+// If enabled, ProtectedBuckets will be ignored.
+//
+// Defaults to disabled.
+func EnableProtectAllBuckets() Option {
+	return func(c *config) error {
+		c.protectAllBuckets = true
+		return nil
+	}
+}
+
+// #BDWare
+// ProtectedBuckets sets the max common prefix length of the bucket in which all peers will be protected.
+// Set to -1 to completely disable protecting any buckets.
+// This will be ignored if EnableProtectAllBuckets is set.
+//
+// Defaults to 1.
+func ProtectedBuckets(maxCpl int) Option {
+	return func(c *config) error {
+		c.protectedBuckets = maxCpl
 		return nil
 	}
 }
