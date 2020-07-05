@@ -4,7 +4,7 @@ go 1.14
 
 replace github.com/libp2p/go-libp2p-kad-dht => ./ // v0.8.2-bdw
 
-replace github.com/libp2p/go-libp2p-kbucket => github.com/bdware/go-libp2p-kbucket v0.4.2-bdw
+replace github.com/libp2p/go-libp2p-kbucket => github.com/bdware/go-libp2p-kbucket v0.4.2-bdw.1
 
 require (
 	github.com/gogo/protobuf v1.3.1
@@ -22,6 +22,7 @@ require (
 	github.com/libp2p/go-eventbus v0.1.0
 	github.com/libp2p/go-libp2p v0.8.2
 	github.com/libp2p/go-libp2p-core v0.5.4
+	github.com/libp2p/go-libp2p-kad-dht v0.8.2
 	github.com/libp2p/go-libp2p-kbucket v0.4.2
 	github.com/libp2p/go-libp2p-peerstore v0.2.4
 	github.com/libp2p/go-libp2p-record v0.1.2

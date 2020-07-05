@@ -1,7 +1,14 @@
+// Copyright for portions of this fork are held by [Protocol Labs, Inc., 2016] as
+// part of the original go-libp2p-kad-dht project. All other copyright for
+// this fork are held by [The BDWare Authors, 2020]. All rights reserved.
+// Use of this source code is governed by MIT license that can be
+// found in the LICENSE file.
+
 package dht
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	ds "github.com/ipfs/go-datastore"
@@ -56,6 +63,10 @@ type config struct {
 		latencyTolerance    time.Duration
 		checkInterval       time.Duration
 		peerFilter          RouteTableFilterFunc
+		// #BDWare
+		considerLatency        bool
+		avgBitsImprovedPerStep float64
+		avgRoundTripPerStep    float64
 	}
 
 	// set to true if we're operating in v1 dht compatible mode
@@ -116,6 +127,17 @@ var defaults = func(o *config) error {
 	o.routingTable.autoRefresh = true
 	o.routingTable.peerFilter = emptyRTFilter
 	o.maxRecordAge = time.Hour * 36
+
+	// #BDWare
+	// If enabled, DHT will find the nearest peers to query by considering both xor distance and latency.
+	// The strategy can be tuned with avgBitsImprovedPerStep and avgRoundTripPerStep.
+	o.routingTable.considerLatency = false
+	// Estimate the average number of bits improved per step.
+	// Reference: D. Stutzbach and R. Rejaie, "Improving Lookup Performance Over a Widely-Deployed DHT," Proceedings IEEE INFOCOM 2006.
+	// For the basic Kademlia approach D(1,1,k), m(1,k) approaches log(2,k)+0.3327, the number of bits improved on average is 1+m(1,k)=1.3327+log(2,k)
+	o.routingTable.avgBitsImprovedPerStep = 1.3327 + math.Log2(float64(defaultBucketSize))
+	// Default to making CPL most important by assuming the worst case scenario: For TCP+TLS1.3, avgRoundTripPerStep = 4
+	o.routingTable.avgRoundTripPerStep = 4
 
 	o.bucketSize = defaultBucketSize
 	o.concurrency = 10
@@ -376,6 +398,45 @@ func QueryFilter(filter QueryFilterFunc) Option {
 func RoutingTableFilter(filter RouteTableFilterFunc) Option {
 	return func(c *config) error {
 		c.routingTable.peerFilter = filter
+		return nil
+	}
+}
+
+//# BDWare
+// If enabled, DHT will find the nearest peers to query by considering both xor distance and latency.
+// The strategy can be tuned with AvgBitsImprovedPerStep and AvgRoundTripPerStep.
+//
+// Defaults to disabled.
+func EnableConsiderLatency() Option {
+	return func(c *config) error {
+		c.routingTable.considerLatency = true
+		return nil
+	}
+}
+
+// #BDWare
+// AvgBitsImprovedPerStep configures the estimated average number of bits improved per step.
+//
+// Defaults to 1.3327 + math.Log2(float64(defaultBucketSize))
+// Reference: D. Stutzbach and R. Rejaie, "Improving Lookup Performance Over a Widely-Deployed DHT," Proceedings IEEE INFOCOM 2006.
+// For the basic Kademlia approach D(1,1,k), m(1,k) approaches log(2,k)+0.3327, the number of bits improved on average is 1+m(1,k)=1.3327+log(2,k)
+func AvgBitsImprovedPerStep(avgBitsImprovedPerStep float64) Option {
+	return func(c *config) error {
+		c.routingTable.avgBitsImprovedPerStep = avgBitsImprovedPerStep
+		return nil
+	}
+}
+
+// #BDWare
+// AvgRoundTripPerStep configures the estimated average numbter of round trip required per step.
+// Examples:
+// For TCP+TLS1.3, avgRoundTripPerStep = 4
+// For QUIC, avgRoundTripPerStep = 2
+//
+// Default to 4, making CPL most important by assuming the worst case scenario: For TCP+TLS1.3, avgRoundTripPerStep = 4
+func AvgRoundTripPerStep(avgRoundTripPerStep float64) Option {
+	return func(c *config) error {
+		c.routingTable.avgRoundTripPerStep = avgRoundTripPerStep
 		return nil
 	}
 }

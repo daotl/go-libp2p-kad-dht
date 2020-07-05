@@ -1,3 +1,9 @@
+// Copyright for portions of this fork are held by [Protocol Labs, Inc., 2016] as
+// part of the original go-libp2p-kad-dht project. All other copyright for
+// this fork are held by [The BDWare Authors, 2020]. All rights reserved.
+// Use of this source code is governed by MIT license that can be
+// found in the LICENSE file.
+
 package dht
 
 import (
@@ -231,7 +237,7 @@ func (q *query) constructLookupResult(target kb.ID) *lookupWithFollowupResult {
 	}
 
 	// get the top K overall peers
-	sortedPeers := kb.SortClosestPeers(peers, target)
+	sortedPeers := q.dht.routingTable.SortClosestPeers(peers, target)
 	if len(sortedPeers) > q.dht.bucketSize {
 		sortedPeers = sortedPeers[:q.dht.bucketSize]
 	}

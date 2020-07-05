@@ -1,3 +1,9 @@
+// Copyright for portions of this fork are held by [Protocol Labs, Inc., 2016] as
+// part of the original go-libp2p-kad-dht project. All other copyright for
+// this fork are held by [The BDWare Authors, 2020]. All rights reserved.
+// Use of this source code is governed by MIT license that can be
+// found in the LICENSE file.
+
 package dht
 
 import (
@@ -347,7 +353,16 @@ func makeRtRefreshManager(dht *IpfsDHT, cfg config, maxLastSuccessfulOutboundThr
 }
 
 func makeRoutingTable(dht *IpfsDHT, cfg config, maxLastSuccessfulOutboundThreshold time.Duration) (*kb.RoutingTable, error) {
-	rt, err := kb.NewRoutingTable(cfg.bucketSize, dht.selfKey, time.Minute, dht.host.Peerstore(), maxLastSuccessfulOutboundThreshold)
+	rt, err := kb.NewRoutingTable(
+		cfg.bucketSize,
+		dht.selfKey,
+		time.Minute,
+		dht.host.Peerstore(),
+		maxLastSuccessfulOutboundThreshold,
+		cfg.routingTable.considerLatency,
+		cfg.routingTable.avgBitsImprovedPerStep,
+		cfg.routingTable.avgRoundTripPerStep,
+	)
 	cmgr := dht.host.ConnManager()
 
 	rt.PeerAdded = func(p peer.ID) {

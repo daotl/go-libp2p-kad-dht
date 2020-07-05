@@ -19,7 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/libp2p/go-libp2p-core/routing"
 
-	test "github.com/libp2p/go-libp2p-kad-dht/internal/testing"
+	test "github.com/bdware/go-libp2p-kad-dht/testing"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	kb "github.com/libp2p/go-libp2p-kbucket"
 	record "github.com/libp2p/go-libp2p-record"
@@ -1455,9 +1455,9 @@ func testFindPeerQuery(t *testing.T,
 
 	sort.Sort(peer.IDSlice(outpeers))
 
-	exp := kb.SortClosestPeers(peers, rtval)[:minInt(guy.bucketSize, len(peers))]
+	exp := guy.routingTable.SortClosestPeers(peers, rtval)[:minInt(guy.bucketSize, len(peers))]
 	t.Logf("got %d peers", len(outpeers))
-	got := kb.SortClosestPeers(outpeers, rtval)
+	got := guy.routingTable.SortClosestPeers(outpeers, rtval)
 
 	assert.EqualValues(t, exp, got)
 }
