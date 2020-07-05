@@ -1,6 +1,10 @@
-module github.com/libp2p/go-libp2p-kad-dht
+module github.com/bdware/go-libp2p-kad-dht
 
 go 1.14
+
+replace github.com/libp2p/go-libp2p-kad-dht => ./ // v0.8.2-bdw
+
+replace github.com/libp2p/go-libp2p-kbucket => github.com/bdware/go-libp2p-kbucket v0.4.2-bdw
 
 require (
 	github.com/gogo/protobuf v1.3.1
