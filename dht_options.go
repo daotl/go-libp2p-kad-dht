@@ -422,14 +422,14 @@ func EnableProtectAllBuckets() Option {
 }
 
 // #BDWare
-// ProtectedBuckets sets the max common prefix length of the bucket in which all peers will be protected.
+// ProtectedBuckets sets the number of the shortest common prefix length bucket in which all peers will be protected.
 // Set to -1 to completely disable protecting any buckets.
 // This will be ignored if EnableProtectAllBuckets is set.
 //
-// Defaults to 1.
-func ProtectedBuckets(maxCpl int) Option {
+// Defaults to 2.
+func ProtectedBuckets(n int) Option {
 	return func(c *config) error {
-		c.protectedBuckets = maxCpl
+		c.protectedBuckets = n
 		return nil
 	}
 }

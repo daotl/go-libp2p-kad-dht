@@ -69,7 +69,7 @@ const (
 
 const (
 	kbucketTag              = "kbucket"
-	defaultProtectedBuckets = 1
+	defaultProtectedBuckets = 2
 )
 
 // IpfsDHT is an implementation of Kademlia with S/Kademlia modifications.
@@ -232,7 +232,6 @@ func NewDHT(ctx context.Context, h host.Host, dstore ds.Batching) *IpfsDHT {
 // NewDHTClient creates a new DHT object with the given peer as the 'local'
 // host. IpfsDHT clients initialized with this function will not respond to DHT
 // requests. If you need a peer to respond to DHT requests, use NewDHT instead.
-// NewDHTClient creates a new DHT object with the given peer as the 'local' host
 func NewDHTClient(ctx context.Context, h host.Host, dstore ds.Batching) *IpfsDHT {
 	dht, err := New(ctx, h, Datastore(dstore), Mode(ModeClient))
 	if err != nil {
@@ -368,7 +367,7 @@ func makeRoutingTable(dht *IpfsDHT, cfg config, maxLastSuccessfulOutboundThresho
 	rt.PeerAdded = func(p peer.ID) {
 		commonPrefixLen := kb.CommonPrefixLen(dht.selfKey, kb.ConvertPeerID(p))
 		// #BDWare
-		if commonPrefixLen <= cfg.protectedBuckets || cfg.protectAllBuckets {
+		if commonPrefixLen < cfg.protectedBuckets || cfg.protectAllBuckets {
 			cmgr.Protect(p, kbucketTag)
 		} else {
 			cmgr.TagPeer(p, kbucketTag, baseConnMgrScore)
@@ -392,13 +391,13 @@ func (dht *IpfsDHT) Mode() ModeOpt {
 
 // fixLowPeersRoutine tries to get more peers into the routing table if we're below the threshold
 func (dht *IpfsDHT) fixLowPeersRoutine(proc goprocess.Process) {
-	timer := time.NewTimer(periodicBootstrapInterval)
-	defer timer.Stop()
+	ticker := time.NewTicker(periodicBootstrapInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-dht.fixLowPeersChan:
-		case <-timer.C:
+		case <-ticker.C:
 		case <-proc.Closing():
 			return
 		}
