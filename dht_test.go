@@ -1827,110 +1827,6 @@ func TestDynamicModeSwitching(t *testing.T) {
 	assertDHTClient()
 }
 
-func TestProtocolUpgrade(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	os := []Option{
-		testPrefix,
-		Mode(ModeServer),
-		NamespacedValidator("v", blankValidator{}),
-		DisableAutoRefresh(),
-	}
-
-	// This test verifies that we can have a node serving both old and new DHTs that will respond as a server to the old
-	// DHT, but only act as a client of the new DHT. In it's capacity as a server it should also only tell queriers
-	// about other DHT servers in the new DHT.
-
-	dhtA, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		append([]Option{V1CompatibleMode(false)}, os...)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dhtB, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		append([]Option{V1CompatibleMode(false)}, os...)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dhtC, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		append([]Option{V1CompatibleMode(true)}, os...)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	connect(t, ctx, dhtA, dhtB)
-	connectNoSync(t, ctx, dhtA, dhtC)
-	wait(t, ctx, dhtC, dhtA)
-
-	if sz := dhtA.RoutingTable().Size(); sz != 1 {
-		t.Fatalf("Expected routing table to be of size %d got %d", 1, sz)
-	}
-
-	ctxT, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	if err := dhtB.PutValue(ctxT, "/v/bat", []byte("screech")); err != nil {
-		t.Fatal(err)
-	}
-
-	value, err := dhtC.GetValue(ctxT, "/v/bat")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(value) != "screech" {
-		t.Fatalf("Expected 'screech' got '%s'", string(value))
-	}
-
-	if err := dhtC.PutValue(ctxT, "/v/cat", []byte("meow")); err != nil {
-		t.Fatal(err)
-	}
-
-	value, err = dhtB.GetValue(ctxT, "/v/cat")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(value) != "meow" {
-		t.Fatalf("Expected 'meow' got '%s'", string(value))
-	}
-
-	// Add record into local DHT only
-	rec := record.MakePutRecord("/v/crow", []byte("caw"))
-	rec.TimeReceived = u.FormatRFC3339(time.Now())
-	err = dhtC.putLocal(string(rec.Key), rec)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = dhtB.GetValue(ctxT, "/v/crow")
-	switch err {
-	case nil:
-		t.Fatalf("should not have been able to find value for %s", "/v/crow")
-	case routing.ErrNotFound:
-	default:
-		t.Fatal(err)
-	}
-
-	// Add record into local DHT only
-	rec = record.MakePutRecord("/v/bee", []byte("buzz"))
-	rec.TimeReceived = u.FormatRFC3339(time.Now())
-	err = dhtB.putLocal(string(rec.Key), rec)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	value, err = dhtC.GetValue(ctxT, "/v/bee")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(value) != "buzz" {
-		t.Fatalf("Expected 'buzz' got '%s'", string(value))
-	}
-}
-
 func TestInvalidKeys(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1976,6 +1872,37 @@ func TestInvalidKeys(t *testing.T) {
 	err = querier.PutValue(ctx, "", []byte("foobar"))
 	if err == nil {
 		t.Fatal("expected to have failed")
+	}
+}
+
+func TestV1ProtocolOverride(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	d1 := setupDHT(ctx, t, false, V1ProtocolOverride("/myproto"))
+	d2 := setupDHT(ctx, t, false, V1ProtocolOverride("/myproto"))
+	d3 := setupDHT(ctx, t, false, V1ProtocolOverride("/myproto2"))
+	d4 := setupDHT(ctx, t, false)
+
+	dhts := []*IpfsDHT{d1, d2, d3, d4}
+
+	for i, dout := range dhts {
+		for _, din := range dhts[i+1:] {
+			connectNoSync(t, ctx, dout, din)
+		}
+	}
+
+	wait(t, ctx, d1, d2)
+	wait(t, ctx, d2, d1)
+
+	time.Sleep(time.Second)
+
+	if d1.RoutingTable().Size() != 1 || d2.routingTable.Size() != 1 {
+		t.Fatal("should have one peer in the routing table")
+	}
+
+	if d3.RoutingTable().Size() > 0 || d4.RoutingTable().Size() > 0 {
+		t.Fatal("should have an empty routing table")
 	}
 }
 

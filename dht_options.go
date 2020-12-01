@@ -46,19 +46,20 @@ const DefaultPrefix protocol.ID = "/ipfs"
 
 // Options is a structure containing all the options that can be used when constructing a DHT.
 type config struct {
-	datastore        ds.Batching
-	validator        record.Validator
-	validatorChanged bool // if true implies that the validator has been changed and that defaults should not be used
-	mode             ModeOpt
-	protocolPrefix   protocol.ID
-	bucketSize       int
-	concurrency      int
-	resiliency       int
-	maxRecordAge     time.Duration
-	enableProviders  bool
-	enableValues     bool
-	providersOptions []providers.Option
-	queryPeerFilter  QueryFilterFunc
+	datastore          ds.Batching
+	validator          record.Validator
+	validatorChanged   bool // if true implies that the validator has been changed and that defaults should not be used
+	mode               ModeOpt
+	protocolPrefix     protocol.ID
+	v1ProtocolOverride protocol.ID
+	bucketSize         int
+	concurrency        int
+	resiliency         int
+	maxRecordAge       time.Duration
+	enableProviders    bool
+	enableValues       bool
+	providersOptions   []providers.Option
+	queryPeerFilter    QueryFilterFunc
 	// #BDWare
 	protectAllBuckets bool
 	protectedBuckets  int
@@ -77,9 +78,7 @@ type config struct {
 		avgRoundTripPerStep    float64
 	}
 
-	// set to true if we're operating in v1 dht compatible mode
-	v1CompatibleMode bool
-	bootstrapPeers   []peer.AddrInfo
+	bootstrapPeers []peer.AddrInfo
 
 	// test specific config options
 	disableFixLowPeers          bool
@@ -158,8 +157,6 @@ var defaults = func(o *config) error {
 	// #BDWare
 	o.protectAllBuckets = false
 	o.protectedBuckets = defaultProtectedBuckets
-
-	o.v1CompatibleMode = true
 
 	return nil
 }
@@ -308,6 +305,18 @@ func ProtocolExtension(ext protocol.ID) Option {
 	}
 }
 
+// V1ProtocolOverride overrides the protocolID used for /kad/1.0.0 with another. This is an
+// advanced feature, and should only be used to handle legacy networks that have not been
+// using protocolIDs of the form /app/kad/1.0.0.
+//
+// This option will override and ignore the ProtocolPrefix and ProtocolExtension options
+func V1ProtocolOverride(proto protocol.ID) Option {
+	return func(c *config) error {
+		c.v1ProtocolOverride = proto
+		return nil
+	}
+}
+
 // BucketSize configures the bucket size (k in the Kademlia paper) of the routing table.
 //
 // The default value is 20.
@@ -414,21 +423,6 @@ func QueryFilter(filter QueryFilterFunc) Option {
 func RoutingTableFilter(filter RouteTableFilterFunc) Option {
 	return func(c *config) error {
 		c.routingTable.peerFilter = filter
-		return nil
-	}
-}
-
-// V1CompatibleMode sets the DHT to operate in V1 compatible mode. In this mode,
-// the DHT node will act like a V1 DHT node (use the V1 protocol names) but will
-// use the V2 query and routing table logic.
-//
-// For now, this option defaults to true for backwards compatibility. In the
-// near future, it will switch to false.
-//
-// This option is perma-unstable and may be removed in the future.
-func V1CompatibleMode(enable bool) Option {
-	return func(c *config) error {
-		c.v1CompatibleMode = enable
 		return nil
 	}
 }
