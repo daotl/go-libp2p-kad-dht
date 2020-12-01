@@ -9,17 +9,21 @@ package dht
 import (
 	"fmt"
 	"math"
+	"testing"
 	"time"
 
-	ds "github.com/ipfs/go-datastore"
-	dssync "github.com/ipfs/go-datastore/sync"
-	"github.com/ipfs/go-ipns"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+
+	"github.com/libp2p/go-libp2p-kbucket/peerdiversity"
 	record "github.com/libp2p/go-libp2p-record"
+
+	ds "github.com/ipfs/go-datastore"
+	dssync "github.com/ipfs/go-datastore/sync"
+	"github.com/ipfs/go-ipns"
 )
 
 // ModeOpt describes what mode the dht should operate in
@@ -65,7 +69,8 @@ type config struct {
 		autoRefresh         bool
 		latencyTolerance    time.Duration
 		//checkInterval       time.Duration // Commented out by Nex, doesn't seem to be used.
-		peerFilter RouteTableFilterFunc
+		peerFilter      RouteTableFilterFunc
+		diversityFilter peerdiversity.PeerIPGroupFilter
 		// #BDWare
 		considerLatency        bool
 		avgBitsImprovedPerStep float64
@@ -75,6 +80,10 @@ type config struct {
 	// set to true if we're operating in v1 dht compatible mode
 	v1CompatibleMode bool
 	bootstrapPeers   []peer.AddrInfo
+
+	// test specific config options
+	disableFixLowPeers          bool
+	testAddressUpdateProcessing bool
 }
 
 func emptyQueryFilter(_ *IpfsDHT, ai peer.AddrInfo) bool  { return true }
@@ -409,6 +418,59 @@ func RoutingTableFilter(filter RouteTableFilterFunc) Option {
 	}
 }
 
+// V1CompatibleMode sets the DHT to operate in V1 compatible mode. In this mode,
+// the DHT node will act like a V1 DHT node (use the V1 protocol names) but will
+// use the V2 query and routing table logic.
+//
+// For now, this option defaults to true for backwards compatibility. In the
+// near future, it will switch to false.
+//
+// This option is perma-unstable and may be removed in the future.
+func V1CompatibleMode(enable bool) Option {
+	return func(c *config) error {
+		c.v1CompatibleMode = enable
+		return nil
+	}
+}
+
+// BootstrapPeers configures the bootstrapping nodes that we will connect to to seed
+// and refresh our Routing Table if it becomes empty.
+func BootstrapPeers(bootstrappers ...peer.AddrInfo) Option {
+	return func(c *config) error {
+		c.bootstrapPeers = bootstrappers
+		return nil
+	}
+}
+
+// RoutingTablePeerDiversityFilter configures the implementation of the `PeerIPGroupFilter` that will be used
+// to construct the diversity filter for the Routing Table.
+// Please see the docs for `peerdiversity.PeerIPGroupFilter` AND `peerdiversity.Filter` for more details.
+func RoutingTablePeerDiversityFilter(pg peerdiversity.PeerIPGroupFilter) Option {
+	return func(c *config) error {
+		c.routingTable.diversityFilter = pg
+		return nil
+	}
+}
+
+// disableFixLowPeersRoutine disables the "fixLowPeers" routine in the DHT.
+// This is ONLY for tests.
+func disableFixLowPeersRoutine(t *testing.T) Option {
+	return func(c *config) error {
+		c.disableFixLowPeers = true
+		return nil
+	}
+}
+
+// forceAddressUpdateProcessing forces the DHT to handle changes to the hosts addresses.
+// This occurs even when AutoRefresh has been disabled.
+// This is ONLY for tests.
+func forceAddressUpdateProcessing(t *testing.T) Option {
+	return func(c *config) error {
+		c.testAddressUpdateProcessing = true
+		return nil
+	}
+}
+
 // #BDWare
 // EnableProtectAllBuckets enable protecting peers in all buckets in the routing table with ConnManager.
 // If enabled, ProtectedBuckets will be ignored.
@@ -469,30 +531,6 @@ func AvgBitsImprovedPerStep(avgBitsImprovedPerStep float64) Option {
 func AvgRoundTripPerStep(avgRoundTripPerStep float64) Option {
 	return func(c *config) error {
 		c.routingTable.avgRoundTripPerStep = avgRoundTripPerStep
-		return nil
-	}
-}
-
-// V1CompatibleMode sets the DHT to operate in V1 compatible mode. In this mode,
-// the DHT node will act like a V1 DHT node (use the V1 protocol names) but will
-// use the V2 query and routing table logic.
-//
-// For now, this option defaults to true for backwards compatibility. In the
-// near future, it will switch to false.
-//
-// This option is perma-unstable and may be removed in the future.
-func V1CompatibleMode(enable bool) Option {
-	return func(c *config) error {
-		c.v1CompatibleMode = enable
-		return nil
-	}
-}
-
-// BootstrapPeers configures the bootstrapping nodes that we will connect to to seed
-// and refresh our Routing Table if it becomes empty.
-func BootstrapPeers(bootstrappers ...peer.AddrInfo) Option {
-	return func(c *config) error {
-		c.bootstrapPeers = bootstrappers
 		return nil
 	}
 }

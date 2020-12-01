@@ -2064,7 +2064,6 @@ func TestBootStrapWhenRTIsEmpty(t *testing.T) {
 	require.NoError(t, dht1.host.Network().ClosePeer(dht2.self))
 	dht1.routingTable.RemovePeer(dht2.self)
 	require.NotContains(t, dht2.self, dht1.routingTable.ListPeers())
-
 	require.Eventually(t, func() bool {
 		return dht1.routingTable.Size() == 2 && dht1.routingTable.Find(bootstrappers[0].self) != "" &&
 			dht1.routingTable.Find(bootstrapcons[0].self) != ""
@@ -2130,7 +2129,7 @@ func TestProtectAllBuckets(t *testing.T) {
 		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
 			t.Fatal("Expected a peer not in the routing table to be not protected")
 		}
-		dhtA.routingTable.TryAddPeer(pidB, false)
+		dhtA.routingTable.TryAddPeer(pidB, false, false)
 		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
 			t.Fatal("Expected a peer in the routing table to be not protected")
 		}
@@ -2161,7 +2160,7 @@ func TestProtectAllBuckets(t *testing.T) {
 		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
 			t.Fatal("Expected a peer not in the routing table to be not protected")
 		}
-		dhtA.routingTable.TryAddPeer(pidB, false)
+		dhtA.routingTable.TryAddPeer(pidB, false, false)
 		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == false {
 			t.Fatal("Expected a peer in the routing table to be protected")
 		}

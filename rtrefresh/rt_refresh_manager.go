@@ -13,6 +13,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	logging "github.com/ipfs/go-log"
+	"github.com/multiformats/go-base32"
 )
 
 var logger = logging.Logger("dht/RtRefreshManager")
@@ -49,6 +50,8 @@ type RtRefreshManager struct {
 	successfulOutboundQueryGracePeriod time.Duration
 
 	triggerRefresh chan *triggerRefreshReq // channel to write refresh requests to.
+
+	refreshDoneCh chan struct{} // write to this channel after every refresh
 }
 
 func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool,
@@ -56,7 +59,8 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 	refreshQueryFnc func(ctx context.Context, key string) error,
 	refreshQueryTimeout time.Duration,
 	refreshInterval time.Duration,
-	successfulOutboundQueryGracePeriod time.Duration) (*RtRefreshManager, error) {
+	successfulOutboundQueryGracePeriod time.Duration,
+	refreshDoneCh chan struct{}) (*RtRefreshManager, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &RtRefreshManager{
@@ -75,6 +79,7 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 		successfulOutboundQueryGracePeriod: successfulOutboundQueryGracePeriod,
 
 		triggerRefresh: make(chan *triggerRefreshReq),
+		refreshDoneCh:  refreshDoneCh,
 	}, nil
 }
 
@@ -235,6 +240,12 @@ func (r *RtRefreshManager) doRefresh(forceRefresh bool) error {
 		}
 	}
 
+	select {
+	case r.refreshDoneCh <- struct{}{}:
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	}
+
 	return merr
 }
 
@@ -263,7 +274,7 @@ func (r *RtRefreshManager) refreshCpl(cpl uint) error {
 	}
 
 	logger.Infof("starting refreshing cpl %d with key %s (routing table size was %d)",
-		cpl, key, r.rt.Size())
+		cpl, loggableRawKeyString(key), r.rt.Size())
 
 	if err := r.runRefreshDHTQuery(key); err != nil {
 		return fmt.Errorf("failed to refresh cpl=%d, err=%s", cpl, err)
@@ -291,4 +302,18 @@ func (r *RtRefreshManager) runRefreshDHTQuery(key string) error {
 	}
 
 	return err
+}
+
+type loggableRawKeyString string
+
+func (lk loggableRawKeyString) String() string {
+	k := string(lk)
+
+	if len(k) == 0 {
+		return k
+	}
+
+	encStr := base32.RawStdEncoding.EncodeToString([]byte(k))
+
+	return encStr
 }
