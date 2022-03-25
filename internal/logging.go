@@ -1,4 +1,4 @@
-package dht
+package internal
 
 import (
 	"fmt"
@@ -75,7 +75,9 @@ func tryFormatLoggableProviderKey(k []byte) (string, error) {
 	if len(k) == 0 {
 		return "", fmt.Errorf("LoggableProviderKey is empty")
 	}
+
 	encodedKey := multibaseB32Encode(k)
+
 	// The DHT used to provide CIDs, but now provides multihashes
 	// TODO: Drop this when enough of the network has upgraded
 	if _, err := cid.Cast(k); err == nil {

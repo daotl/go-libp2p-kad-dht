@@ -1,9 +1,3 @@
-// Copyright for portions of this fork are held by [Protocol Labs, Inc., 2016] as
-// part of the original go-libp2p-kad-dht project. All other copyright for
-// this fork are held by [The BDWare Authors, 2020]. All rights reserved.
-// Use of this source code is governed by MIT license that can be
-// found in the LICENSE file.
-
 package dht
 
 import (
@@ -13,36 +7,35 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p"
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/event"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/libp2p/go-libp2p-core/routing"
-
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
-	test "github.com/libp2p/go-libp2p-kad-dht/testing"
-	kb "github.com/libp2p/go-libp2p-kbucket"
-	record "github.com/libp2p/go-libp2p-record"
-	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
-	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
-
-	"github.com/ipfs/go-cid"
-	detectrace "github.com/ipfs/go-detect-race"
-	u "github.com/ipfs/go-ipfs-util"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"github.com/multiformats/go-multistream"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	test "github.com/libp2p/go-libp2p-kad-dht/internal/testing"
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+
+	"github.com/ipfs/go-cid"
+	detectrace "github.com/ipfs/go-detect-race"
+	u "github.com/ipfs/go-ipfs-util"
+	kb "github.com/libp2p/go-libp2p-kbucket"
+	record "github.com/libp2p/go-libp2p-record"
+	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
+	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 )
 
 var testCaseCids []cid.Cid
@@ -124,14 +117,13 @@ func setupDHT(ctx context.Context, t *testing.T, client bool, options ...Option)
 		baseOpts = append(baseOpts, Mode(ModeServer))
 	}
 
-	d, err := New(
-		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		append(baseOpts, options...)...,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	host, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	t.Cleanup(func() { host.Close() })
+
+	d, err := New(ctx, host, append(baseOpts, options...)...)
+	require.NoError(t, err)
+	t.Cleanup(func() { d.Close() })
 	return d
 }
 
@@ -396,6 +388,7 @@ func TestValueSetInvalid(t *testing.T) {
 }
 
 func TestContextShutDown(t *testing.T) {
+	t.Skip("This test is flaky, see https://github.com/libp2p/go-libp2p-kad-dht/issues/724.")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -420,6 +413,8 @@ func TestContextShutDown(t *testing.T) {
 }
 
 func TestSearchValue(t *testing.T) {
+	t.Skip("This test is flaky, see https://github.com/libp2p/go-libp2p-kad-dht/issues/723.")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -475,54 +470,6 @@ func TestSearchValue(t *testing.T) {
 	}
 }
 
-func TestGetValues(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dhtA := setupDHT(ctx, t, false)
-	dhtB := setupDHT(ctx, t, false)
-
-	defer dhtA.Close()
-	defer dhtB.Close()
-	defer dhtA.host.Close()
-	defer dhtB.host.Close()
-
-	connect(t, ctx, dhtA, dhtB)
-
-	ctxT, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-
-	err := dhtB.PutValue(ctxT, "/v/hello", []byte("newer"))
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = dhtA.PutValue(ctxT, "/v/hello", []byte("valid"))
-	if err != nil {
-		t.Error(err)
-	}
-
-	ctxT, cancel = context.WithTimeout(ctx, time.Second*2)
-	defer cancel()
-	vals, err := dhtA.GetValues(ctxT, "/v/hello", 16)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(vals) != 2 {
-		t.Fatalf("expected to get 2 values, got %d", len(vals))
-	}
-
-	sort.Slice(vals, func(i, j int) bool { return string(vals[i].Val) < string(vals[j].Val) })
-
-	if string(vals[0].Val) != "valid" {
-		t.Errorf("unexpected vals[0]: %s", string(vals[0].Val))
-	}
-	if string(vals[1].Val) != "valid" {
-		t.Errorf("unexpected vals[1]: %s", string(vals[1].Val))
-	}
-}
-
 func TestValueGetInvalid(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -568,28 +515,6 @@ func TestValueGetInvalid(t *testing.T) {
 	testSetGet("newer", "newer", nil)
 	// Attempt to set older record again should be ignored
 	testSetGet("valid", "newer", nil)
-}
-
-func TestInvalidMessageSenderTracking(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	dht := setupDHT(ctx, t, false)
-	defer dht.Close()
-
-	foo := peer.ID("asdasd")
-	_, err := dht.messageSenderForPeer(ctx, foo)
-	if err == nil {
-		t.Fatal("that shouldnt have succeeded")
-	}
-
-	dht.smlk.Lock()
-	mscnt := len(dht.strmap)
-	dht.smlk.Unlock()
-
-	if mscnt > 0 {
-		t.Fatal("should have no message senders in map")
-	}
 }
 
 func TestProvides(t *testing.T) {
@@ -670,7 +595,7 @@ func TestLocalProvides(t *testing.T) {
 
 	for _, c := range testCaseCids {
 		for i := 0; i < 3; i++ {
-			provs := dhts[i].ProviderManager.GetProviders(ctx, c.Hash())
+			provs, _ := dhts[i].ProviderStore().GetProviders(ctx, c.Hash())
 			if len(provs) > 0 {
 				t.Fatal("shouldnt know this")
 			}
@@ -778,12 +703,16 @@ func TestRefresh(t *testing.T) {
 }
 
 func TestRefreshBelowMinRTThreshold(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	host, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
 
 	// enable auto bootstrap on A
 	dhtA, err := New(
 		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
+		host,
 		testPrefix,
 		Mode(ModeServer),
 		NamespacedValidator("v", blankValidator{}),
@@ -871,6 +800,9 @@ func TestPeriodicRefresh(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping due to #760")
+	}
 	if detectrace.WithRace() {
 		t.Skip("skipping due to race detector max goroutines")
 	}
@@ -932,6 +864,9 @@ func TestPeriodicRefresh(t *testing.T) {
 }
 
 func TestProvidesMany(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping due to #760")
+	}
 	if detectrace.WithRace() {
 		t.Skip("skipping due to race detector max goroutines")
 	}
@@ -1185,6 +1120,55 @@ func TestFindPeer(t *testing.T) {
 	}
 }
 
+func TestFindPeerWithQueryFilter(t *testing.T) {
+	// t.Skip("skipping test to debug another")
+	if testing.Short() {
+		t.SkipNow()
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping due to #760")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	filteredPeer, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	defer filteredPeer.Close()
+	dhts := setupDHTS(t, ctx, 4, QueryFilter(func(_ interface{}, ai peer.AddrInfo) bool {
+		return ai.ID != filteredPeer.ID()
+	}))
+	defer func() {
+		for i := 0; i < 4; i++ {
+			dhts[i].Close()
+			dhts[i].host.Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[1], dhts[2])
+	connect(t, ctx, dhts[1], dhts[3])
+
+	err = filteredPeer.Connect(ctx, peer.AddrInfo{
+		ID:    dhts[2].host.ID(),
+		Addrs: dhts[2].host.Addrs(),
+	})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return len(dhts[2].host.Network().ConnsToPeer(filteredPeer.ID())) > 0
+	}, 5*time.Millisecond, time.Millisecond, "failed to connect to peer")
+
+	ctxT, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	p, err := dhts[0].FindPeer(ctxT, filteredPeer.ID())
+	require.NoError(t, err)
+
+	require.NotEmpty(t, p.ID, "Failed to find peer.")
+	require.Equal(t, filteredPeer.ID(), p.ID, "Didnt find expected peer.")
+}
+
 func TestConnectCollision(t *testing.T) {
 	if testing.Short() {
 		t.SkipNow()
@@ -1314,7 +1298,7 @@ func TestClientModeConnect(t *testing.T) {
 
 	c := testCaseCids[0]
 	p := peer.ID("TestPeer")
-	a.ProviderManager.AddProvider(ctx, c.Hash(), p)
+	a.ProviderStore().AddProvider(ctx, c.Hash(), peer.AddrInfo{ID: p})
 	time.Sleep(time.Millisecond * 5) // just in case...
 
 	provs, err := b.FindProviders(ctx, c)
@@ -1394,6 +1378,10 @@ func testFindPeerQuery(t *testing.T,
 	leafs, // Number of nodes that might be connected to from the bootstrappers
 	bootstrapConns int, // Number of bootstrappers each leaf should connect to.
 ) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping due to #760")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1453,19 +1441,14 @@ func testFindPeerQuery(t *testing.T,
 	val := "foobar"
 	rtval := kb.ConvertKey(val)
 
-	out, err := guy.GetClosestPeers(ctx, val)
+	outpeers, err := guy.GetClosestPeers(ctx, val)
 	require.NoError(t, err)
-
-	var outpeers []peer.ID
-	for p := range out {
-		outpeers = append(outpeers, p)
-	}
 
 	sort.Sort(peer.IDSlice(outpeers))
 
-	exp := guy.routingTable.SortClosestPeers(peers, rtval)[:minInt(guy.bucketSize, len(peers))]
+	exp := kb.SortClosestPeers(peers, rtval)[:minInt(guy.bucketSize, len(peers))]
 	t.Logf("got %d peers", len(outpeers))
-	got := guy.routingTable.SortClosestPeers(outpeers, rtval)
+	got := kb.SortClosestPeers(outpeers, rtval)
 
 	assert.EqualValues(t, exp, got)
 }
@@ -1494,13 +1477,8 @@ func TestFindClosestPeers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out []peer.ID
-	for p := range peers {
-		out = append(out, p)
-	}
-
-	if len(out) < querier.beta {
-		t.Fatalf("got wrong number of peers (got %d, expected at least %d)", len(out), querier.beta)
+	if len(peers) < querier.beta {
+		t.Fatalf("got wrong number of peers (got %d, expected at least %d)", len(peers), querier.beta)
 	}
 }
 
@@ -1587,7 +1565,7 @@ func TestProvideDisabled(t *testing.T) {
 				if err != routing.ErrNotSupported {
 					t.Fatal("get should have failed on node B")
 				}
-				provs := dhtB.ProviderManager.GetProviders(ctx, kHash)
+				provs, _ := dhtB.ProviderStore().GetProviders(ctx, kHash)
 				if len(provs) != 0 {
 					t.Fatal("node B should not have found local providers")
 				}
@@ -1603,7 +1581,7 @@ func TestProvideDisabled(t *testing.T) {
 					t.Fatal("node A should not have found providers")
 				}
 			}
-			provAddrs := dhtA.ProviderManager.GetProviders(ctx, kHash)
+			provAddrs, _ := dhtA.ProviderStore().GetProviders(ctx, kHash)
 			if len(provAddrs) != 0 {
 				t.Fatal("node A should not have found local providers")
 			}
@@ -1612,7 +1590,9 @@ func TestProvideDisabled(t *testing.T) {
 }
 
 func TestHandleRemotePeerProtocolChanges(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	os := []Option{
 		testPrefix,
 		Mode(ModeServer),
@@ -1621,12 +1601,18 @@ func TestHandleRemotePeerProtocolChanges(t *testing.T) {
 	}
 
 	// start host 1 that speaks dht v1
-	dhtA, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), os...)
+	hA, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	defer hA.Close()
+	dhtA, err := New(ctx, hA, os...)
 	require.NoError(t, err)
 	defer dhtA.Close()
 
 	// start host 2 that also speaks dht v1
-	dhtB, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), os...)
+	hB, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	defer hB.Close()
+	dhtB, err := New(ctx, hB, os...)
 	require.NoError(t, err)
 	defer dhtB.Close()
 
@@ -1660,57 +1646,60 @@ func TestGetSetPluggedProtocol(t *testing.T) {
 			DisableAutoRefresh(),
 		}
 
-		dhtA, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), os...)
-		if err != nil {
-			t.Fatal(err)
-		}
+		hA, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		defer hA.Close()
+		dhtA, err := New(ctx, hA, os...)
+		require.NoError(t, err)
+		defer dhtA.Close()
 
-		dhtB, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), os...)
-		if err != nil {
-			t.Fatal(err)
-		}
+		hB, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		defer hB.Close()
+		dhtB, err := New(ctx, hB, os...)
+		require.NoError(t, err)
+		defer dhtB.Close()
 
 		connect(t, ctx, dhtA, dhtB)
 
 		ctxT, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
-		if err := dhtA.PutValue(ctxT, "/v/cat", []byte("meow")); err != nil {
-			t.Fatal(err)
-		}
+		err = dhtA.PutValue(ctxT, "/v/cat", []byte("meow"))
+		require.NoError(t, err)
 
 		value, err := dhtB.GetValue(ctxT, "/v/cat")
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
-		if string(value) != "meow" {
-			t.Fatalf("Expected 'meow' got '%s'", string(value))
-		}
+		require.Equal(t, "meow", string(value))
 	})
 
 	t.Run("DHT routing table for peer A won't contain B if A and B don't use same protocol", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		dhtA, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), []Option{
+		hA, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		defer hA.Close()
+		dhtA, err := New(ctx, hA, []Option{
 			ProtocolPrefix("/esh"),
 			Mode(ModeServer),
 			NamespacedValidator("v", blankValidator{}),
 			DisableAutoRefresh(),
 		}...)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+		defer dhtA.Close()
 
-		dhtB, err := New(ctx, bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)), []Option{
+		hB, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		defer hB.Close()
+		dhtB, err := New(ctx, hB, []Option{
 			ProtocolPrefix("/lsr"),
 			Mode(ModeServer),
 			NamespacedValidator("v", blankValidator{}),
 			DisableAutoRefresh(),
 		}...)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
+		defer dhtB.Close()
 
 		connectNoSync(t, ctx, dhtA, dhtB)
 
@@ -1931,6 +1920,9 @@ func TestRoutingFilter(t *testing.T) {
 }
 
 func TestBootStrapWhenRTIsEmpty(t *testing.T) {
+	if detectrace.WithRace() {
+		t.Skip("skipping timing dependent test when race detector is running")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1963,133 +1955,165 @@ func TestBootStrapWhenRTIsEmpty(t *testing.T) {
 		bootstrapAddrs[i] = b
 	}
 
-	//----------------
-	// We will initialize a DHT with 1 bootstrapper, connect it to another DHT,
-	// then remove the latter from the Routing Table
-	// This should add the bootstrap peer and the peer that the bootstrap peer is conencted to
-	// to it's Routing Table.
-	// AutoRefresh needs to be enabled for this.
-	dht1, err := New(
-		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		testPrefix,
-		NamespacedValidator("v", blankValidator{}),
-		Mode(ModeServer),
-		BootstrapPeers(bootstrapAddrs[0]),
-	)
-	require.NoError(t, err)
-	dht2 := setupDHT(ctx, t, false)
-	defer func() {
-		dht1.host.Close()
-		dht2.host.Close()
-		dht1.Close()
-		dht2.Close()
-	}()
-	connect(t, ctx, dht1, dht2)
-	require.NoError(t, dht2.Close())
-	require.NoError(t, dht2.host.Close())
-	require.NoError(t, dht1.host.Network().ClosePeer(dht2.self))
-	dht1.routingTable.RemovePeer(dht2.self)
-	require.NotContains(t, dht2.self, dht1.routingTable.ListPeers())
-	require.Eventually(t, func() bool {
-		return dht1.routingTable.Size() == 2 && dht1.routingTable.Find(bootstrappers[0].self) != "" &&
-			dht1.routingTable.Find(bootstrapcons[0].self) != ""
-	}, 5*time.Second, 500*time.Millisecond)
+	{
 
-	//----------------
-	// We will initialize a DHT with 2 bootstrappers, connect it to another DHT,
-	// then remove the DHT handler from the other DHT which should make the first DHT's
-	// routing table empty.
-	// This should add the bootstrap peers and the peer thats the bootstrap peers are connected to
-	// to it's Routing Table.
-	// AutoRefresh needs to be enabled for this.
-	dht1, err = New(
-		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		testPrefix,
-		NamespacedValidator("v", blankValidator{}),
-		Mode(ModeServer),
-		BootstrapPeers(bootstrapAddrs[1], bootstrapAddrs[2]),
-	)
-	require.NoError(t, err)
+		//----------------
+		// We will initialize a DHT with 1 bootstrapper, connect it to another DHT,
+		// then remove the latter from the Routing Table
+		// This should add the bootstrap peer and the peer that the bootstrap peer is conencted to
+		// to it's Routing Table.
+		// AutoRefresh needs to be enabled for this.
 
-	dht2 = setupDHT(ctx, t, false)
-	connect(t, ctx, dht1, dht2)
-	defer func() {
-		dht1.host.Close()
-		dht2.host.Close()
-		dht1.Close()
-		dht2.Close()
-	}()
-	connect(t, ctx, dht1, dht2)
-	require.NoError(t, dht2.setMode(modeClient))
+		h1, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		dht1, err := New(
+			ctx,
+			h1,
+			testPrefix,
+			NamespacedValidator("v", blankValidator{}),
+			Mode(ModeServer),
+			BootstrapPeers(bootstrapAddrs[0]),
+		)
+		require.NoError(t, err)
+		dht2 := setupDHT(ctx, t, false)
+		defer func() {
+			dht1.host.Close()
+			dht2.host.Close()
+			dht1.Close()
+			dht2.Close()
+		}()
+		connect(t, ctx, dht1, dht2)
+		require.NoError(t, dht2.Close())
+		require.NoError(t, dht2.host.Close())
+		require.NoError(t, dht1.host.Network().ClosePeer(dht2.self))
+		dht1.routingTable.RemovePeer(dht2.self)
+		require.NotContains(t, dht2.self, dht1.routingTable.ListPeers())
+		require.Eventually(t, func() bool {
+			return dht1.routingTable.Size() == 2 && dht1.routingTable.Find(bootstrappers[0].self) != "" &&
+				dht1.routingTable.Find(bootstrapcons[0].self) != ""
+		}, 5*time.Second, 500*time.Millisecond)
 
-	require.Eventually(t, func() bool {
-		rt := dht1.routingTable
+	}
 
-		return rt.Size() == 4 && rt.Find(bootstrappers[1].self) != "" &&
-			rt.Find(bootstrappers[2].self) != "" && rt.Find(bootstrapcons[1].self) != "" && rt.Find(bootstrapcons[2].self) != ""
-	}, 5*time.Second, 500*time.Millisecond)
+	{
+
+		//----------------
+		// We will initialize a DHT with 2 bootstrappers, connect it to another DHT,
+		// then remove the DHT handler from the other DHT which should make the first DHT's
+		// routing table empty.
+		// This should add the bootstrap peers and the peer thats the bootstrap peers are connected to
+		// to it's Routing Table.
+		// AutoRefresh needs to be enabled for this.
+		h1, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+		require.NoError(t, err)
+		dht1, err := New(
+			ctx,
+			h1,
+			testPrefix,
+			NamespacedValidator("v", blankValidator{}),
+			Mode(ModeServer),
+			BootstrapPeers(bootstrapAddrs[1], bootstrapAddrs[2]),
+		)
+		require.NoError(t, err)
+
+		dht2 := setupDHT(ctx, t, false)
+		connect(t, ctx, dht1, dht2)
+		defer func() {
+			dht1.host.Close()
+			dht2.host.Close()
+			dht1.Close()
+			dht2.Close()
+		}()
+		connect(t, ctx, dht1, dht2)
+		require.NoError(t, dht2.setMode(modeClient))
+
+		require.Eventually(t, func() bool {
+			rt := dht1.routingTable
+
+			return rt.Size() == 4 && rt.Find(bootstrappers[1].self) != "" &&
+				rt.Find(bootstrappers[2].self) != "" && rt.Find(bootstrapcons[1].self) != "" && rt.Find(bootstrapcons[2].self) != ""
+		}, 5*time.Second, 500*time.Millisecond)
+	}
 }
 
-// #BDWare
-func TestProtectAllBuckets(t *testing.T) {
-	t.Run("Default to unprotected, peers should not be protected", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+func TestBootstrapPeersFunc(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var lock sync.Mutex
 
-		h, err := libp2p.New(ctx, libp2p.ConnectionManager(connmgr.NewConnManager(
-			100,         // Lowwater
-			400,         // HighWater,
-			time.Minute, // GracePeriod
-		)))
-		dhtA, err := New(ctx, h, []Option{
-			ProtectedBuckets(-1),
-		}...)
-		if err != nil {
-			t.Fatal(err)
-		}
+	bootstrapFuncA := func() []peer.AddrInfo {
+		return []peer.AddrInfo{}
+	}
+	dhtA := setupDHT(ctx, t, false, BootstrapPeersFunc(bootstrapFuncA))
 
-		dhtB := setupDHT(ctx, t, false)
-		pidB := dhtB.self
+	bootstrapPeersB := []peer.AddrInfo{}
+	bootstrapFuncB := func() []peer.AddrInfo {
+		lock.Lock()
+		defer lock.Unlock()
+		return bootstrapPeersB
+	}
 
-		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
-			t.Fatal("Expected a peer not in the routing table to be not protected")
-		}
-		dhtA.routingTable.TryAddPeer(pidB, false, false)
-		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
-			t.Fatal("Expected a peer in the routing table to be not protected")
-		}
-	})
+	dhtB := setupDHT(ctx, t, false, BootstrapPeersFunc(bootstrapFuncB))
+	require.Equal(t, 0, len(dhtB.host.Network().Peers()))
 
-	t.Run("With ProtectRoutingTable set, peers in the routing table should be protected", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+	addrA := peer.AddrInfo{
+		ID:    dhtA.self,
+		Addrs: dhtA.host.Addrs(),
+	}
 
-		h, err := libp2p.New(ctx, libp2p.ConnectionManager(connmgr.NewConnManager(
-			100,         // Lowwater
-			400,         // HighWater,
-			time.Minute, // GracePeriod
-		)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		dhtA, err := New(ctx, h, []Option{
-			EnableProtectAllBuckets(),
-		}...)
-		if err != nil {
-			t.Fatal(err)
-		}
+	lock.Lock()
+	bootstrapPeersB = []peer.AddrInfo{addrA}
+	lock.Unlock()
 
-		dhtB := setupDHT(ctx, t, false)
-		pidB := dhtB.self
+	dhtB.fixLowPeers(ctx)
+	require.NotEqual(t, 0, len(dhtB.host.Network().Peers()))
+}
 
-		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == true {
-			t.Fatal("Expected a peer not in the routing table to be not protected")
-		}
-		dhtA.routingTable.TryAddPeer(pidB, false, false)
-		if protected := h.ConnManager().Unprotect(pidB, "randomTag"); protected == false {
-			t.Fatal("Expected a peer in the routing table to be protected")
-		}
-	})
+func TestPreconnectedNodes(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	opts := []Option{
+		testPrefix,
+		DisableAutoRefresh(),
+		Mode(ModeServer),
+	}
+
+	// Create hosts
+	h1, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	defer h1.Close()
+	h2, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	defer h2.Close()
+
+	// Setup first DHT
+	d1, err := New(ctx, h1, opts...)
+	require.NoError(t, err)
+	defer d1.Close()
+
+	// Connect the first host to the second
+	err = h1.Connect(ctx, peer.AddrInfo{ID: h2.ID(), Addrs: h2.Addrs()})
+	require.NoError(t, err)
+
+	// Wait until we know identify has completed by checking for supported protocols
+	// TODO: Is this needed? Could we do h2.Connect(h1) and that would wait for identify to complete.
+	require.Eventually(t, func() bool {
+		h1Protos, err := h2.Peerstore().SupportsProtocols(h1.ID(), d1.protocolsStrs...)
+		require.NoError(t, err)
+
+		return len(h1Protos) > 0
+	}, 10*time.Second, time.Millisecond)
+
+	// Setup the second DHT
+	d2, err := New(ctx, h2, opts...)
+	require.NoError(t, err)
+	defer h2.Close()
+
+	// See if it works
+	peers, err := d2.GetClosestPeers(ctx, "testkey")
+	require.NoError(t, err)
+
+	require.Equal(t, len(peers), 1, "why is there more than one peer?")
+	require.Equal(t, h1.ID(), peers[0], "could not find peer")
 }

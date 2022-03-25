@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"github.com/libp2p/go-libp2p-core/test"
 	"testing"
 	"time"
+
+	"github.com/libp2p/go-libp2p-core/test"
 
 	u "github.com/ipfs/go-ipfs-util"
 	ci "github.com/libp2p/go-libp2p-core/crypto"
@@ -113,7 +114,7 @@ func TestPubkeyFromDHT(t *testing.T) {
 	pubk := identity.PublicKey()
 	id := identity.ID()
 	pkkey := routing.KeyForPublicKey(id)
-	pkbytes, err := pubk.Bytes()
+	pkbytes, err := ci.MarshalPublicKey(pubk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestPubkeyBadKeyFromDHT(t *testing.T) {
 	if pk == peer2.PublicKey() {
 		t.Fatal("Public keys shouldn't match here")
 	}
-	wrongbytes, err := peer2.PublicKey().Bytes()
+	wrongbytes, err := ci.MarshalPublicKey(peer2.PublicKey())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +205,7 @@ func TestPubkeyBadKeyFromDHT(t *testing.T) {
 	// Store incorrect public key on node B
 	rec := record.MakePutRecord(pkkey, wrongbytes)
 	rec.TimeReceived = u.FormatRFC3339(time.Now())
-	err = dhtB.putLocal(pkkey, rec)
+	err = dhtB.putLocal(ctx, pkkey, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +236,7 @@ func TestPubkeyBadKeyFromDHTGoodKeyDirect(t *testing.T) {
 	wrong := tnet.RandIdentityOrFatal(t)
 	pkkey := routing.KeyForPublicKey(dhtB.self)
 
-	wrongbytes, err := wrong.PublicKey().Bytes()
+	wrongbytes, err := ci.MarshalPublicKey(wrong.PublicKey())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +244,7 @@ func TestPubkeyBadKeyFromDHTGoodKeyDirect(t *testing.T) {
 	// Store incorrect public key on node B
 	rec := record.MakePutRecord(pkkey, wrongbytes)
 	rec.TimeReceived = u.FormatRFC3339(time.Now())
-	err = dhtB.putLocal(pkkey, rec)
+	err = dhtB.putLocal(ctx, pkkey, rec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +285,7 @@ func TestPubkeyGoodKeyFromDHTGoodKeyDirect(t *testing.T) {
 	connect(t, ctx, dhtA, dhtB)
 
 	pubk := dhtB.peerstore.PubKey(dhtB.self)
-	pkbytes, err := pubk.Bytes()
+	pkbytes, err := ci.MarshalPublicKey(pubk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +340,7 @@ func TestValuesDisabled(t *testing.T) {
 			connect(t, ctx, dhtA, dhtB)
 
 			pubk := dhtB.peerstore.PubKey(dhtB.self)
-			pkbytes, err := pubk.Bytes()
+			pkbytes, err := ci.MarshalPublicKey(pubk)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -358,7 +359,7 @@ func TestValuesDisabled(t *testing.T) {
 				if err != routing.ErrNotSupported {
 					t.Fatal("get should have failed on node B")
 				}
-				rec, _ := dhtB.getLocal(pkkey)
+				rec, _ := dhtB.getLocal(ctx, pkkey)
 				if rec != nil {
 					t.Fatal("node B should not have found the value locally")
 				}
@@ -374,7 +375,7 @@ func TestValuesDisabled(t *testing.T) {
 					t.Fatal("node A should not have found the value")
 				}
 			}
-			rec, _ := dhtA.getLocal(pkkey)
+			rec, _ := dhtA.getLocal(ctx, pkkey)
 			if rec != nil {
 				t.Fatal("node A should not have found the value locally")
 			}

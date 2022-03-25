@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	u "github.com/ipfs/go-ipfs-util"
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	peerstore "github.com/libp2p/go-libp2p-core/peerstore"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -15,6 +15,8 @@ import (
 	record "github.com/libp2p/go-libp2p-record"
 	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
+	"github.com/multiformats/go-multiaddr"
+	"github.com/stretchr/testify/require"
 )
 
 var wancid, lancid cid.Cid
@@ -33,9 +35,17 @@ type customRtHelper struct {
 	allow peer.ID
 }
 
-func MkFilterForPeer() (func(d *dht.IpfsDHT, conns []network.Conn) bool, *customRtHelper) {
+func MkFilterForPeer() (func(_ interface{}, p peer.ID) bool, *customRtHelper) {
 	helper := customRtHelper{}
-	f := func(_ *dht.IpfsDHT, conns []network.Conn) bool {
+
+	type hasHost interface {
+		Host() host.Host
+	}
+
+	f := func(dht interface{}, p peer.ID) bool {
+		d := dht.(hasHost)
+		conns := d.Host().Network().ConnsToPeer(p)
+
 		for _, c := range conns {
 			if c.RemotePeer() == helper.allow {
 				return true
@@ -47,7 +57,9 @@ func MkFilterForPeer() (func(d *dht.IpfsDHT, conns []network.Conn) bool, *custom
 }
 
 func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Option) (*DHT, []*customRtHelper) {
-	h := bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport))
+	h, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	t.Cleanup(func() { h.Close() })
 
 	wanFilter, wanRef := MkFilterForPeer()
 	wanOpts := []dht.Option{
@@ -57,9 +69,7 @@ func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Optio
 		dht.RoutingTableFilter(wanFilter),
 	}
 	wan, err := dht.New(ctx, h, wanOpts...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	lanFilter, lanRef := MkFilterForPeer()
 	lanOpts := []dht.Option{
@@ -71,9 +81,7 @@ func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Optio
 		dht.Mode(dht.ModeServer),
 	}
 	lan, err := dht.New(ctx, h, lanOpts...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	impl := DHT{wan, lan}
 	return &impl, []*customRtHelper{wanRef, lanRef}
@@ -81,6 +89,11 @@ func setupDHTWithFilters(ctx context.Context, t *testing.T, options ...dht.Optio
 
 func setupDHT(ctx context.Context, t *testing.T, options ...dht.Option) *DHT {
 	t.Helper()
+
+	host, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	t.Cleanup(func() { host.Close() })
+
 	baseOpts := []dht.Option{
 		dht.NamespacedValidator("v", blankValidator{}),
 		dht.ProtocolPrefix("/test"),
@@ -89,12 +102,11 @@ func setupDHT(ctx context.Context, t *testing.T, options ...dht.Option) *DHT {
 
 	d, err := New(
 		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
+		host,
 		append([]Option{DHTOption(baseOpts...)}, DHTOption(options...))...,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	return d
 }
 
@@ -134,9 +146,13 @@ func setupTier(ctx context.Context, t *testing.T) (*DHT, *dht.IpfsDHT, *dht.Ipfs
 
 	d, hlprs := setupDHTWithFilters(ctx, t)
 
+	whost, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	t.Cleanup(func() { whost.Close() })
+
 	wan, err := dht.New(
 		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
+		whost,
 		append(baseOpts, dht.Mode(dht.ModeServer))...,
 	)
 	if err != nil {
@@ -145,9 +161,13 @@ func setupTier(ctx context.Context, t *testing.T) (*DHT, *dht.IpfsDHT, *dht.Ipfs
 	hlprs[0].allow = wan.PeerID()
 	connect(ctx, t, d.WAN, wan)
 
+	lhost, err := bhost.NewHost(swarmt.GenSwarm(t, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+	t.Cleanup(func() { lhost.Close() })
+
 	lan, err := dht.New(
 		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
+		lhost,
 		append(baseOpts, dht.Mode(dht.ModeServer), dht.ProtocolExtension("/lan"))...,
 	)
 	if err != nil {
@@ -356,14 +376,20 @@ func TestFindPeer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Addrs) != 1 {
-		t.Fatalf("expeced find peer to find 1 address, found %d", len(p.Addrs))
-	}
+	assertUniqueMultiaddrs(t, p.Addrs)
 	p, err = d.FindPeer(ctx, wan.PeerID())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Addrs) != 1 {
-		t.Fatalf("expeced find peer to find addresses, found %d", len(p.Addrs))
+	assertUniqueMultiaddrs(t, p.Addrs)
+}
+
+func assertUniqueMultiaddrs(t *testing.T, addrs []multiaddr.Multiaddr) {
+	set := make(map[string]bool)
+	for _, addr := range addrs {
+		if set[string(addr.Bytes())] {
+			t.Errorf("duplicate address %s", addr)
+		}
+		set[string(addr.Bytes())] = true
 	}
 }
