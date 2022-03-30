@@ -1,6 +1,8 @@
-module github.com/libp2p/go-libp2p-kad-dht
+module github.com/daotl/go-libp2p-kad-dht
 
 go 1.16
+
+replace github.com/libp2p/go-libp2p-kad-dht => ./
 
 require (
 	github.com/gogo/protobuf v1.3.2
