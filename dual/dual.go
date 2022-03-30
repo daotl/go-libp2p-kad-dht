@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	dht "github.com/libp2p/go-libp2p-kad-dht"
+	dht "github.com/daotl/go-libp2p-kad-dht"
 
 	"github.com/ipfs/go-cid"
 	ci "github.com/libp2p/go-libp2p-core/crypto"

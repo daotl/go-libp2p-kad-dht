@@ -6,9 +6,9 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/network"
 
-	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
-	"github.com/libp2p/go-libp2p-kad-dht/metrics"
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	"github.com/daotl/go-libp2p-kad-dht/internal/net"
+	"github.com/daotl/go-libp2p-kad-dht/metrics"
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 
 	"github.com/libp2p/go-msgio"
 	"go.opencensus.io/stats"

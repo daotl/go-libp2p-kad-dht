@@ -12,7 +12,7 @@ import (
 	recpb "github.com/libp2p/go-libp2p-record/pb"
 	"github.com/multiformats/go-multihash"
 
-	"github.com/libp2p/go-libp2p-kad-dht/internal"
+	"github.com/daotl/go-libp2p-kad-dht/internal"
 )
 
 var logger = logging.Logger("dht")

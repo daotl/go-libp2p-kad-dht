@@ -19,7 +19,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/libp2p/go-msgio/protoio"
 
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 
 	u "github.com/ipfs/go-ipfs-util"
 )

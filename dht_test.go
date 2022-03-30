@@ -26,8 +26,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	test "github.com/libp2p/go-libp2p-kad-dht/internal/testing"
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	test "github.com/daotl/go-libp2p-kad-dht/internal/testing"
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 
 	"github.com/ipfs/go-cid"
 	detectrace "github.com/ipfs/go-detect-race"

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 	proto "github.com/gogo/protobuf/proto"
 	"github.com/libp2p/go-libp2p"
 	crypto "github.com/libp2p/go-libp2p-core/crypto"
 	peer "github.com/libp2p/go-libp2p-core/peer"
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	recpb "github.com/libp2p/go-libp2p-record/pb"
 	ma "github.com/multiformats/go-multiaddr"
 )

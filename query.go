@@ -13,8 +13,8 @@ import (
 	pstore "github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/libp2p/go-libp2p-core/routing"
 
+	"github.com/daotl/go-libp2p-kad-dht/qpeerset"
 	"github.com/google/uuid"
-	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 	kb "github.com/libp2p/go-libp2p-kbucket"
 )
 

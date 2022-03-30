@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/tag"

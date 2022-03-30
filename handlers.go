@@ -10,11 +10,11 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 
+	"github.com/daotl/go-libp2p-kad-dht/internal"
+	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 	"github.com/gogo/protobuf/proto"
 	ds "github.com/ipfs/go-datastore"
 	u "github.com/ipfs/go-ipfs-util"
-	"github.com/libp2p/go-libp2p-kad-dht/internal"
-	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	recpb "github.com/libp2p/go-libp2p-record/pb"
 	"github.com/multiformats/go-base32"
 )

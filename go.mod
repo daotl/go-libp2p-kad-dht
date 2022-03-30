@@ -4,6 +4,8 @@ go 1.16
 
 replace github.com/libp2p/go-libp2p-kad-dht => ./
 
+replace github.com/lucas-clemente/quic-go => github.com/lucas-clemente/quic-go v0.26.0
+
 require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/gopacket v1.1.19
