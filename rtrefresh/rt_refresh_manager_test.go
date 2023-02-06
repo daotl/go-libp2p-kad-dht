@@ -55,7 +55,7 @@ func TestSkipRefreshOnGapCpls(t *testing.T) {
 
 	// when 2*gapcpl < maxCpl
 	// gap is 2 and max is 10
-	rt, err := kb.NewRoutingTable(2, kb.ConvertPeerID(local), time.Hour, pstore.NewMetrics(), nil, 100*time.Hour, nil, false, 0, 0)
+	rt, err := kb.NewRoutingTable(2, kb.ConvertPeerID(local), time.Hour, pstore.NewMetrics(), 100*time.Hour, nil)
 	require.NoError(t, err)
 	r := &RtRefreshManager{ctx: ctx, rt: rt, refreshKeyGenFnc: kfnc, dhtPeerId: local}
 	icpl := uint(2)
