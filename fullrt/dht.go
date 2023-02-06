@@ -3,6 +3,7 @@ package fullrt
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -13,12 +14,13 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/libp2p/go-libp2p-core/routing"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/core/routing"
+	swarm "github.com/libp2p/go-libp2p/p2p/net/swarm"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/ipfs/go-cid"
@@ -50,6 +52,8 @@ import (
 var Tracer = otel.Tracer("")
 
 var logger = logging.Logger("fullrtdht")
+
+const rtRefreshLimitsMsg = `Accelerated DHT client was unable to fully refresh its routing table due to Resource Manager limits, which may degrade content routing. Consider increasing resource limits. See debug logs for the "dht-crawler" subsystem for details.`
 
 // FullRT is an experimental DHT client that is under development. Expect breaking changes to occur in this client
 // until it stabilizes.
@@ -271,6 +275,7 @@ func (dht *FullRT) runCrawler(ctx context.Context) {
 		}
 
 		start := time.Now()
+		limitErrOnce := sync.Once{}
 		dht.crawler.Run(ctx, addrs,
 			func(p peer.ID, rtPeers []*peer.AddrInfo) {
 				conns := dht.h.Network().ConnsToPeer(p)
@@ -296,7 +301,20 @@ func (dht *FullRT) runCrawler(ctx context.Context) {
 					addrs: addrs,
 				}
 			},
-			func(p peer.ID, err error) {})
+			func(p peer.ID, err error) {
+				dialErr, ok := err.(*swarm.DialError)
+				if ok {
+					for _, transportErr := range dialErr.DialErrors {
+						if errors.Is(transportErr.Cause, network.ErrResourceLimitExceeded) {
+							limitErrOnce.Do(func() { logger.Errorf(rtRefreshLimitsMsg) })
+						}
+					}
+				}
+				// note that DialError implements Unwrap() which returns the Cause, so this covers that case
+				if errors.Is(err, network.ErrResourceLimitExceeded) {
+					limitErrOnce.Do(func() { logger.Errorf(rtRefreshLimitsMsg) })
+				}
+			})
 		dur := time.Since(start)
 		logger.Infof("crawl took %v", dur)
 
@@ -643,7 +661,7 @@ func (dht *FullRT) updatePeerValues(ctx context.Context, key string, val []byte,
 	fixupRec := record.MakePutRecord(key, val)
 	for _, p := range peers {
 		go func(p peer.ID) {
-			//TODO: Is this possible?
+			// TODO: Is this possible?
 			if p == dht.h.ID() {
 				err := dht.putLocal(ctx, key, fixupRec)
 				if err != nil {
@@ -1203,11 +1221,22 @@ func (dht *FullRT) findProvidersAsyncRoutine(ctx context.Context, key multihash.
 	defer close(peerOut)
 
 	findAll := count == 0
-	var ps *peer.Set
-	if findAll {
-		ps = peer.NewSet()
-	} else {
-		ps = peer.NewLimitedSet(count)
+	ps := make(map[peer.ID]struct{})
+	psLock := &sync.Mutex{}
+	psTryAdd := func(p peer.ID) bool {
+		psLock.Lock()
+		defer psLock.Unlock()
+		_, ok := ps[p]
+		if !ok && (len(ps) < count || findAll) {
+			ps[p] = struct{}{}
+			return true
+		}
+		return false
+	}
+	psSize := func() int {
+		psLock.Lock()
+		defer psLock.Unlock()
+		return len(ps)
 	}
 
 	provs, err := dht.ProviderManager.GetProviders(ctx, key)
@@ -1216,7 +1245,7 @@ func (dht *FullRT) findProvidersAsyncRoutine(ctx context.Context, key multihash.
 	}
 	for _, p := range provs {
 		// NOTE: Assuming that this list of peers is unique
-		if ps.TryAdd(p.ID) {
+		if psTryAdd(p.ID) {
 			select {
 			case peerOut <- p:
 			case <-ctx.Done():
@@ -1226,7 +1255,7 @@ func (dht *FullRT) findProvidersAsyncRoutine(ctx context.Context, key multihash.
 
 		// If we have enough peers locally, don't bother with remote RPC
 		// TODO: is this a DOS vector?
-		if !findAll && ps.Size() >= count {
+		if !findAll && psSize() >= count {
 			return
 		}
 	}
@@ -1257,7 +1286,7 @@ func (dht *FullRT) findProvidersAsyncRoutine(ctx context.Context, key multihash.
 		for _, prov := range provs {
 			dht.maybeAddAddrs(prov.ID, prov.Addrs, peerstore.TempAddrTTL)
 			logger.Debugf("got provider: %s", prov)
-			if ps.TryAdd(prov.ID) {
+			if psTryAdd(prov.ID) {
 				logger.Debugf("using provider: %s", prov)
 				select {
 				case peerOut <- *prov:
@@ -1266,8 +1295,8 @@ func (dht *FullRT) findProvidersAsyncRoutine(ctx context.Context, key multihash.
 					return ctx.Err()
 				}
 			}
-			if !findAll && ps.Size() >= count {
-				logger.Debugf("got enough providers (%d/%d)", ps.Size(), count)
+			if !findAll && psSize() >= count {
+				logger.Debugf("got enough providers (%d/%d)", psSize(), count)
 				cancelquery()
 				return nil
 			}

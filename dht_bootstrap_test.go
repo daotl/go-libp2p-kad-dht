@@ -6,8 +6,8 @@ import (
 	"time"
 
 	kb "github.com/daotl/go-libp2p-kbucket"
-	"github.com/libp2p/go-libp2p-core/event"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/event"
+	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/stretchr/testify/require"
 )

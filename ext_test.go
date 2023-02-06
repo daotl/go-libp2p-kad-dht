@@ -6,17 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/libp2p/go-libp2p-core/routing"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/libp2p/go-libp2p/core/protocol"
+	"github.com/libp2p/go-libp2p/core/routing"
 	"github.com/stretchr/testify/require"
 
 	record "github.com/libp2p/go-libp2p-record"
-	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+	swarmt "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
 	"github.com/libp2p/go-msgio/protoio"
 
 	pb "github.com/daotl/go-libp2p-kad-dht/pb"
@@ -30,10 +30,11 @@ func TestHungRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mn, err := mocknet.FullMeshLinked(ctx, 2)
+	mn, err := mocknet.FullMeshLinked(2)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer mn.Close()
 	hosts := mn.Hosts()
 
 	os := []Option{testPrefix, DisableAutoRefresh(), Mode(ModeServer)}
@@ -231,10 +232,11 @@ func TestNotFound(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	mn, err := mocknet.FullMeshConnected(ctx, 16)
+	mn, err := mocknet.FullMeshConnected(16)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer mn.Close()
 	hosts := mn.Hosts()
 
 	os := []Option{testPrefix, DisableAutoRefresh(), Mode(ModeServer)}
@@ -306,7 +308,7 @@ func TestNotFound(t *testing.T) {
 				// make sure we didn't just disconnect
 				t.Fatal("expected peers in the routing table")
 			}
-			//Success!
+			// Success!
 			return
 		case u.ErrTimeout:
 			t.Fatal("Should not have gotten timeout!")
@@ -324,10 +326,11 @@ func TestLessThanKResponses(t *testing.T) {
 	// t.Skip("skipping test because it makes a lot of output")
 
 	ctx := context.Background()
-	mn, err := mocknet.FullMeshConnected(ctx, 6)
+	mn, err := mocknet.FullMeshConnected(6)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer mn.Close()
 	hosts := mn.Hosts()
 
 	os := []Option{testPrefix, DisableAutoRefresh(), Mode(ModeServer)}
@@ -379,7 +382,7 @@ func TestLessThanKResponses(t *testing.T) {
 	if _, err := d.GetValue(ctx, "hello"); err != nil {
 		switch err {
 		case routing.ErrNotFound:
-			//Success!
+			// Success!
 			return
 		case u.ErrTimeout:
 			t.Fatal("Should not have gotten timeout!")
@@ -397,10 +400,11 @@ func TestMultipleQueries(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	mn, err := mocknet.FullMeshConnected(ctx, 2)
+	mn, err := mocknet.FullMeshConnected(2)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer mn.Close()
 	hosts := mn.Hosts()
 	os := []Option{testPrefix, DisableAutoRefresh(), Mode(ModeServer)}
 	d, err := New(ctx, hosts[0], os...)
@@ -448,7 +452,7 @@ func TestMultipleQueries(t *testing.T) {
 		if _, err := d.GetValue(ctx, "hello"); err != nil {
 			switch err {
 			case routing.ErrNotFound:
-				//Success!
+				// Success!
 				continue
 			case u.ErrTimeout:
 				t.Fatal("Should not have gotten timeout!")

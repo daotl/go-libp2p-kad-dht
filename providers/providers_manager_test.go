@@ -3,13 +3,13 @@ package providers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoremem"
 
 	mh "github.com/multiformats/go-multihash"
 
@@ -235,7 +235,7 @@ func TestProvidesExpire(t *testing.T) {
 	}
 }
 
-var _ = ioutil.NopCloser
+var _ = io.NopCloser
 var _ = os.DevNull
 
 // TestLargeProvidersSet can be used for profiling.
@@ -248,24 +248,23 @@ func TestLargeProvidersSet(t *testing.T) {
 
 	dstore := ds.NewMapDatastore()
 
-	//dirn, err := ioutil.TempDir("", "provtest")
-	//if err != nil {
+	//dirn, err := os.MkdirTemp("", "provtest")
 	//	t.Fatal(err)
-	//}
+	// }
 	//
-	//opts := &lds.Options{
+	// opts := &lds.Options{
 	//	NoSync:      true,
 	//	Compression: 1,
-	//}
-	//lds, err := lds.NewDatastore(dirn, opts)
-	//if err != nil {
+	// }
+	// lds, err := lds.NewDatastore(dirn, opts)
+	// if err != nil {
 	//	t.Fatal(err)
-	//}
-	//dstore = lds
+	// }
+	// dstore = lds
 	//
-	//defer func() {
+	// defer func() {
 	//	os.RemoveAll(dirn)
-	//}()
+	// }()
 
 	ctx := context.Background()
 	var peers []peer.ID
