@@ -3,6 +3,7 @@ package dht
 import (
 	"context"
 	"fmt"
+
 	"math"
 	"math/rand"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	pb "github.com/daotl/go-libp2p-kad-dht/pb"
 	"github.com/daotl/go-libp2p-kad-dht/providers"
 	"github.com/daotl/go-libp2p-kad-dht/rtrefresh"
+
 	kb "github.com/daotl/go-libp2p-kbucket"
 	"github.com/daotl/go-libp2p-kbucket/peerdiversity"
 	record "github.com/libp2p/go-libp2p-record"
