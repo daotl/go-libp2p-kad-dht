@@ -2,10 +2,8 @@ module github.com/daotl/go-libp2p-kad-dht
 
 go 1.18
 
-replace github.com/daotl/go-libp2p-kbucket => /Users/lz/BDLdger/go-libp2p-kbucket
-
 require (
-	github.com/daotl/go-libp2p-kbucket v0.4.7-daot.4
+	github.com/daotl/go-libp2p-kbucket v0.5.0
 	github.com/daotl/go-libp2p-xor v0.1.0-daot.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/gopacket v1.1.19
@@ -20,7 +18,6 @@ require (
 	github.com/ipfs/go-log v1.0.5
 	github.com/jbenet/goprocess v0.1.4
 	github.com/libp2p/go-libp2p v0.22.0
-	github.com/libp2p/go-libp2p-kbucket v0.5.0
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/libp2p/go-libp2p-testing v0.12.0
